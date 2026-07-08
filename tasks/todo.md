@@ -29,13 +29,73 @@ Full spec: `~/.claude/plans/vivid-waddling-wigderson.md`. Conventions: `../CLAUD
 - [x] End-to-end: seeded `OrderBookTest` failure -> Opus 4.8 patch -> green -> PR opens
 - [x] **Opus 4.8 checkpoint verification — PASS WITH NOTES**
 
-## Day 3 — replay gate (not started)
+## Day 3 — replay gate (in progress)
 
-- [ ] `replay/ReplayHarness.java`, `replay/diff_gate.py`
-- [ ] `feed/resilience.py` hardening (backoff, quarantine, gap-fill, drift detection
-      — schema.py's quarantine path already exists; this phase adds retry/backoff)
-- [ ] Seed the "passes tests, fails replay" P&L bug (separate from the Day 1 bug)
-- [ ] Wire as required GitHub status check
+Design decisions (locked in before implementing):
+
+- **Maven structure**: root `pom.xml` reactor with `<modules>engine, replay</modules>`.
+  `replay/pom.xml` depends on `com.novig:engine:0.1.0`. Keeps `cd engine && mvn -q test`
+  working unchanged; new `replay` module builds via the reactor so `replay` can depend
+  on `engine`'s compiled classes without a separate install step.
+- **No new JSON library.** Captured ndjson rows are flat objects (dataclass fields +
+  `captured_at`, no nesting) — a small hand-rolled flat-JSON-line reader in
+  `replay/src/main/java/com/novig/replay/NdjsonReader.java` is enough, keeping the
+  "no heavy deps" ethos consistent with the stdlib-only Python side.
+- **`replay/` stays structurally outside `agent/fix_loop.py`'s `MAIN_SRC`**
+  (`engine/src/main/java`) — the replay gate is the independent grader and must never
+  be in the autonomous loop's writable blast radius.
+- **Odds -> orders conversion** (`ReplayHarness`): no real "size" field exists in
+  American odds data, so don't invent one arbitrarily. Model each bookmaker's h2h
+  quote as a synthetic two-sided quote around its own implied probability (small
+  fixed spread, fixed synthetic quantity) for the "OUTCOME_A = home team wins"
+  contract. Divergent bookmaker lines are what generates real fills — this mirrors
+  actual line-shopping/arbitrage dynamics instead of a fabricated size field.
+- **Seeded Day-3 bug**: new `PriceConverter.americanOddsToPriceTicks(int)` in
+  `engine/`, used only by `ReplayHarness`. Correct version rounds half-up. The seeded
+  demo bug truncates instead. `PriceConverterTest` uses round-number American odds
+  (-150, +100, -300, +150 — all exact fractions, no rounding ambiguity) so truncation
+  and rounding agree and **the test passes on both the correct and buggy version**.
+  Realistic non-round odds (e.g. +118 -> round 46 vs truncate 45) only show up in
+  real/realistic captured data, which is exactly what the replay gate replays — so
+  the bug is invisible to unit tests but visible to replay. Lives in `engine/` (not
+  `replay/`) so "mvn test passes" is literally the existing CI `test` job, and is
+  kept out of the untouched Day-1 `OrderBook`/`SettlementEngine` bug entirely.
+- **`diff_gate.py`**: builds "baseline" (given git ref, via `git worktree add` into a
+  temp dir) and "candidate" (current working tree / PR head) independently, runs
+  `ReplayHarness <odds.ndjson> <scores.ndjson>` against both over the *same* captured
+  window, diffs the two JSON summaries. Thresholds: any nonzero per-order settlement
+  P&L delta -> BLOCK (exit 1); wall-clock latency regression > 20% -> WARN only
+  (exit 0). `ReplayHarness` JSON contract:
+  `{"markets": {event_id: {"pnl_by_order": {...}, "fill_count": n}}, "wall_clock_millis": n}`.
+- **No live odds capture exists yet** (`ODDS_API_KEY` still unset, carried over from
+  Day 1). Day 3 uses a hand-authored fixture odds window
+  (`replay/testdata/sample_window/odds.ndjson`) referencing the SAME real completed
+  game already in `feed/captured/scores.ndjson` (event 401859967, Spurs @ Knicks) —
+  real settlement outcome, synthetic pre-game odds (can't retroactively capture
+  historical odds on the free tier). Clearly labeled as a fixture, not a live
+  capture. **Follow-up once `ODDS_API_KEY` is obtained**: do a real live odds+scores
+  capture window and re-run the replay gate against it before the Day 4 demo video.
+- **CI**: new `.github/workflows/replay-gate.yml` on `pull_request` (separate from
+  `autonomous-loop.yml`'s `push`-triggered jobs, so it doesn't interfere with the
+  Day 2 loop). Marking it a *required* status check is a GitHub branch-protection
+  setting — a manual step (or an explicit `gh api`/UI action) called out separately,
+  not silently automated.
+
+Tasks:
+
+- [ ] Root `pom.xml` reactor + `replay/pom.xml`
+- [ ] `PriceConverter.java` (correct, round-half-up) + `PriceConverterTest.java`
+- [ ] `replay/NdjsonReader.java` (flat-JSON-line parser)
+- [ ] `replay/ReplayHarness.java` (odds->orders, replay, settle, JSON output)
+- [ ] Fixture window: `replay/testdata/sample_window/odds.ndjson`
+- [ ] Replay module tests (NdjsonReader + ReplayHarness against fixture)
+- [ ] `replay/diff_gate.py` (git-worktree baseline vs candidate, thresholds)
+- [ ] `feed/resilience.py` (backoff, gap, drift) + wire into both pollers
+- [ ] Seed the Day-3 bug on a separate branch (buggy `PriceConverter`), prove
+      `mvn test` green there + replay gate blocks it against main
+- [ ] `.github/workflows/replay-gate.yml`
+- [ ] Local end-to-end verification (mirroring Day 1/2's real-run standard)
+- [ ] Opus 4.8 checkpoint verification
 
 ## Day 4 — telemetry + skills + demo (not started)
 

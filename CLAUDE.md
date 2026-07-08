@@ -39,11 +39,25 @@ exchange itself.
 ## Build / test commands
 
 ```bash
-cd engine && mvn -q test          # engine unit tests
+cd engine && mvn -q test          # engine unit tests (standalone, unchanged)
 cd feed && python3 scores_poller.py     # ESPN, keyless, safe to run anytime
                                           # (set SCORES_POLL_ONCE=1 to run once and exit)
 cd feed && ODDS_API_KEY=... python3 odds_poller.py   # requires free key from
                                                        # https://the-odds-api.com/
+
+# replay module (depends on engine's classes; built via the root reactor pom.xml)
+mvn -q -pl replay -am compile              # compile only -- no install/package needed
+java -cp engine/target/classes:replay/target/classes com.novig.replay.ReplayHarness \
+  replay/testdata/sample_window/odds.ndjson replay/testdata/sample_window/scores.ndjson
+
+# replay gate: candidate (current tree) vs a baseline git ref, over the same window
+python3 replay/diff_gate.py --baseline-ref main
+
+# Note: `mvn -pl replay -am test` from repo root will always fail at the engine
+# module first (the Day-1 seeded bug is permanent/intentional on main), before
+# ever reaching replay's own tests. To run replay's tests in isolation locally,
+# either exclude that one known method or just run engine and replay tests
+# separately -- CI's replay-gate job only needs engine to *compile*, not pass.
 ```
 
 ## Conventions / gotchas
@@ -66,9 +80,21 @@ cd feed && ODDS_API_KEY=... python3 odds_poller.py   # requires free key from
   `OrderBookTest.partialFillLeavesRemainderRestingInBook` is written to fail
   against this bug on purpose — it's the target for the Day 2 autonomous fix
   loop. Don't "fix" it manually; that's the point of Day 2.
-- A second, separate bug will be seeded in Day 3: one that passes all unit tests
-  but shifts settlement P&L when replayed — that's the replay-gate's reason to
-  exist. Do not conflate it with the Day 1 bug above.
+- **`PriceConverter.java` (Day 3) is the deliberate seeding point for the second
+  bug**: a demo branch swaps its correct round-half-up conversion for a
+  truncating one. `PriceConverterTest`'s own fixtures use round American odds
+  (-150, +100, -300, +150) where truncation and rounding agree, so the test
+  passes on both versions — only non-round odds (which real/realistic captured
+  data contains, e.g. `+118`) expose the divergence, and only replay against
+  real market data catches it. Do not conflate with the Day 1 `OrderBook` bug.
+- **`replay/` is structurally outside `agent/fix_loop.py`'s `MAIN_SRC`**
+  (`engine/src/main/java`) on purpose — the replay gate is the independent
+  grader and must never be inside the autonomous loop's writable blast radius.
+- **No live odds capture exists yet** (`ODDS_API_KEY` still unset). Day 3's
+  `replay/testdata/sample_window/` is a fixture: the real completed game
+  already in `feed/captured/scores.ndjson`, paired with hand-authored (not
+  captured) odds ticks for that same game. See its `README.md`. Replace with a
+  real live capture before the Day 4 demo video once a key is obtained.
 
 ## Status log
 
@@ -89,4 +115,11 @@ cd feed && ODDS_API_KEY=... python3 odds_poller.py   # requires free key from
   against an unadvanced `main`. Full verdict + fixes in `tasks/todo.md`. The Day 1
   seeded bug remains unmerged on `main` by design — fix loop output lives in PRs,
   not merged, so Day 3's replay-gate work starts from the same red baseline.
-  Next: Day 3, the replay gate.
+- **Day 3 (replay gate) — implemented, pending Opus 4.8 checkpoint.**
+  `replay/ReplayHarness.java` (odds -> synthetic orders -> OrderBook ->
+  SettlementEngine -> per-market P&L JSON), `replay/diff_gate.py`
+  (git-worktree baseline vs. candidate working tree, blocks on any P&L delta,
+  warns on >20% latency regression), `feed/resilience.py` (retry-with-backoff,
+  typed gap/drift feed-health events) wired into both pollers, and
+  `.github/workflows/replay-gate.yml` (pull_request-triggered). Full detail,
+  design rationale, and the seeded-bug demo plan in `tasks/todo.md`.

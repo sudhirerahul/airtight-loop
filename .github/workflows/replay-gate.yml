@@ -1,0 +1,29 @@
+name: replay-gate
+
+# Separate from autonomous-loop.yml's push-triggered test/auto-fix jobs on
+# purpose: this only runs on pull_request, so it can never re-trigger (or be
+# re-triggered by) the Day-2 fix loop.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  replay-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Replay candidate vs baseline over the captured window
+        run: python3 replay/diff_gate.py --baseline-ref "origin/${{ github.base_ref }}"

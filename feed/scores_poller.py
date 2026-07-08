@@ -18,11 +18,11 @@ import json
 import os
 import sys
 import time
-import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from resilience import detect_drift, fetch_with_backoff
 from schema import FeedValidationError, parse_score_event
 
 SPORT = os.environ.get("SCORES_SPORT", "basketball")
@@ -45,13 +45,9 @@ def fetch_scoreboard() -> dict:
 
 def capture_once() -> int:
     CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        payload = fetch_scoreboard()
-    except urllib.error.HTTPError as exc:
-        print(f"[scores_poller] HTTP error {exc.code} -- backing off, will retry next interval", file=sys.stderr)
-        return 0
-    except urllib.error.URLError as exc:
-        print(f"[scores_poller] network error, holding last-known-good state: {exc}", file=sys.stderr)
+    payload = fetch_with_backoff(fetch_scoreboard, feed_name="scores")
+    if payload is None:
+        print("[scores_poller] poll failed after retries -- gap recorded, holding last-known-good state", file=sys.stderr)
         return 0
 
     events = payload.get("events")
@@ -65,11 +61,13 @@ def capture_once() -> int:
         return 0
 
     written = 0
+    quarantined = 0
     with CAPTURE_FILE.open("a") as out, QUARANTINE_FILE.open("a") as quarantine:
         for raw_event in events:
             try:
                 event = parse_score_event(raw_event)
             except FeedValidationError as exc:
+                quarantined += 1
                 quarantine.write(json.dumps({
                     "captured_at": datetime.now(timezone.utc).isoformat(),
                     "reason": str(exc),
@@ -85,6 +83,7 @@ def capture_once() -> int:
             out.write(json.dumps(record) + "\n")
             written += 1
 
+    detect_drift("scores", quarantined_count=quarantined, total_count=len(events))
     return written
 
 

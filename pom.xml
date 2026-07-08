@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.novig</groupId>
+  <artifactId>airtight-loop</artifactId>
+  <version>0.1.0</version>
+  <packaging>pom</packaging>
+
+  <!--
+    Pure aggregator POM: not a <parent> of engine/replay, just a reactor build
+    order so `replay` can depend on `engine`'s just-built classes without a
+    separate `mvn install` step. `cd engine && mvn -q test` still works
+    standalone and unchanged; this only matters for building replay too.
+  -->
+  <modules>
+    <module>engine</module>
+    <module>replay</module>
+  </modules>
+</project>

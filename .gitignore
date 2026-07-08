@@ -11,6 +11,8 @@ agent/runs/*.json
 
 # Java / Maven
 engine/target/
+replay/target/
+target/
 
 # Python
 __pycache__/

@@ -21,11 +21,11 @@ import json
 import os
 import sys
 import time
-import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from resilience import detect_drift, fetch_with_backoff
 from schema import FeedValidationError, parse_odds_event
 
 API_BASE = "https://api.the-odds-api.com/v4"
@@ -54,24 +54,19 @@ def fetch_odds(api_key: str) -> list[dict]:
 
 def capture_once(api_key: str) -> int:
     CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        events = fetch_odds(api_key)
-    except urllib.error.HTTPError as exc:
-        if exc.code == 429:
-            print("[odds_poller] rate limited (429) -- backing off, will retry next interval", file=sys.stderr)
-            return 0
-        print(f"[odds_poller] HTTP error {exc.code}: {exc.reason}", file=sys.stderr)
-        return 0
-    except urllib.error.URLError as exc:
-        print(f"[odds_poller] network error, holding last-known-good state: {exc}", file=sys.stderr)
+    events = fetch_with_backoff(lambda: fetch_odds(api_key), feed_name="odds")
+    if events is None:
+        print("[odds_poller] poll failed after retries -- gap recorded, holding last-known-good state", file=sys.stderr)
         return 0
 
     written = 0
+    quarantined = 0
     with CAPTURE_FILE.open("a") as out, QUARANTINE_FILE.open("a") as quarantine:
         for raw_event in events:
             try:
                 ticks = parse_odds_event(raw_event)
             except FeedValidationError as exc:
+                quarantined += 1
                 quarantine.write(json.dumps({
                     "captured_at": datetime.now(timezone.utc).isoformat(),
                     "reason": str(exc),
@@ -82,6 +77,8 @@ def capture_once(api_key: str) -> int:
                 record = {"captured_at": datetime.now(timezone.utc).isoformat(), **tick.__dict__}
                 out.write(json.dumps(record) + "\n")
                 written += 1
+
+    detect_drift("odds", quarantined_count=quarantined, total_count=len(events))
     return written
 
 
