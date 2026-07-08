@@ -53,11 +53,11 @@ public final class OrderBook {
                 bestPrice, tradeQty, Instant.now()));
 
             incoming.reduceRemaining(tradeQty);
+            resting.reduceRemaining(tradeQty);
 
-            // BUG (seeded): a resting order that is only partially filled must stay in the
-            // book at its reduced remaining quantity. This unconditionally pops it off the
-            // queue instead, so liquidity vanishes after any partial fill.
-            queue.pollFirst();
+            if (resting.remainingQuantity() == 0) {
+                queue.pollFirst();
+            }
             if (queue.isEmpty()) {
                 opposite.remove(bestPrice);
             }
