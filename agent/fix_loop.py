@@ -98,6 +98,13 @@ def list_main_source_files() -> list[str]:
     return sorted(str(p.relative_to(REPO_ROOT)) for p in MAIN_SRC.rglob("*.java"))
 
 
+def is_within_main_src(path: Path) -> bool:
+    try:
+        return path.resolve().is_relative_to(MAIN_SRC.resolve())
+    except (OSError, RuntimeError):
+        return False
+
+
 def classify_failure(client: anthropic.Anthropic, class_name: str, method_name: str, failure_output: str) -> str:
     candidates = list_main_source_files()
     prompt = (
@@ -157,7 +164,8 @@ def git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
 
 def open_pr(test_class: str, method_name: str, root_cause: str, attempts: int) -> str:
     short_sha = git("rev-parse", "--short", "HEAD").stdout.strip()
-    branch = f"fix/{method_name}-{short_sha}"
+    run_id = datetime.now(timezone.utc).strftime("%H%M%S")
+    branch = f"fix/{method_name}-{short_sha}-{run_id}"
     git("checkout", "-b", branch)
     git("add", "-A")
     commit_msg = (
@@ -232,14 +240,14 @@ def main() -> int:
 
         source_file = classify_failure(client, class_name, method_name, output)
         source_path = REPO_ROOT / source_file
-        if not source_path.is_relative_to(MAIN_SRC):
+        if not is_within_main_src(source_path):
             print(f"[fix_loop] refusing: classified file outside engine/src/main/java: {source_file}", file=sys.stderr)
             attempts_log.append({"attempt": attempt, "error": "classification outside main src", "source_file": source_file})
             continue
 
         fix = generate_fix(client, test_file, source_file, output, previous_attempt)
         fix_path = REPO_ROOT / fix["file_path"]
-        if not fix_path.is_relative_to(MAIN_SRC):
+        if not is_within_main_src(fix_path):
             print(f"[fix_loop] refusing: fix path outside engine/src/main/java: {fix['file_path']}", file=sys.stderr)
             attempts_log.append({"attempt": attempt, "error": "fix path outside main src", "root_cause": fix.get("root_cause")})
             continue

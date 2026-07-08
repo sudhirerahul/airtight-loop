@@ -76,4 +76,17 @@ cd feed && ODDS_API_KEY=... python3 odds_poller.py   # requires free key from
   rebuild + re-test confirmed the seeded bug is real and isolated, the rest of the
   matching/settlement logic is correct, and both pollers behave as claimed (ESPN
   live-verified, odds parser unit-verified pending an API key). Full verdict in
-  `tasks/todo.md`. Next: Day 2, the autonomous fix loop.
+  `tasks/todo.md`.
+- **Day 2 (autonomous fix loop) — DONE. Opus 4.8 checkpoint: PASS WITH NOTES.**
+  `agent/fix_loop.py` (Haiku 4.5 classifies -> Opus 4.8 patches -> retest -> PR)
+  and `.github/workflows/autonomous-loop.yml` both verified end-to-end against the
+  real, public `sudhirerahul/airtight-loop` GitHub repo: a real CI-triggered run
+  (`test` fails on the seeded bug -> `auto-fix` succeeds) opened a real PR
+  (github-actions[bot], #2) with the correct minimal patch, test file untouched.
+  Two real defects the checkpoint found were fixed same day: a lexical (not
+  resolved) path-containment guard that could be bypassed via `..` traversal, and
+  a deterministic branch-name collision that caused duplicate PRs on repeat runs
+  against an unadvanced `main`. Full verdict + fixes in `tasks/todo.md`. The Day 1
+  seeded bug remains unmerged on `main` by design — fix loop output lives in PRs,
+  not merged, so Day 3's replay-gate work starts from the same red baseline.
+  Next: Day 3, the replay gate.

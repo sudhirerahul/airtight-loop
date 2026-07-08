@@ -22,11 +22,12 @@ Full spec: `~/.claude/plans/vivid-waddling-wigderson.md`. Conventions: `../CLAUD
 - [ ] User action needed: sign up for a free key at https://the-odds-api.com/
       and set `ODDS_API_KEY` so `odds_poller.py` can do a real capture
 
-## Day 2 — autonomous fix loop (not started)
+## Day 2 — autonomous fix loop
 
-- [ ] `agent/fix_loop.py` + prompts
-- [ ] GitHub Actions wiring (`.github/workflows/autonomous-loop.yml`)
-- [ ] End-to-end: seeded `OrderBookTest` failure -> Opus 4.8 patch -> green -> PR opens
+- [x] `agent/fix_loop.py` + prompts
+- [x] GitHub Actions wiring (`.github/workflows/autonomous-loop.yml`)
+- [x] End-to-end: seeded `OrderBookTest` failure -> Opus 4.8 patch -> green -> PR opens
+- [x] **Opus 4.8 checkpoint verification — PASS WITH NOTES**
 
 ## Day 3 — replay gate (not started)
 
@@ -67,3 +68,72 @@ Independent Opus 4.8 review (did not implement, rebuilt/re-ran everything itself
   `scores_poller`'s in-memory dedup resets per one-shot run (expected behavior, not
   a defect).
 - **Verdict: proceed to Day 2.**
+
+### Day 2 — PASS WITH NOTES (2026-07-08)
+
+Independent Opus 4.8 review (did not implement; re-read all code, re-ran the script,
+re-ran CI inspection, empirically tested the guardrail):
+
+- **Code + seeded bug — PASS.** Seeded bug intact and untouched on `main`
+  (`OrderBook.java:60`, unconditional `queue.pollFirst()`); `mvn test` red
+  (`Tests run: 7, Failures: 1`). Prompts and workflow read and correct.
+- **Security/guardrails — PASS except one real defect (CONCERN).**
+  No API-key/token *values* are ever printed (only a "not set" status at
+  `fix_loop.py:223`). No `shell=True`; all `mvn`/`git`/`gh` calls use argv lists,
+  and `root_cause`/`file_path`/`new_content` reach git/gh as discrete argv elements
+  (no injection). `MAX_ATTEMPTS` is a bounded `range()` (default 2) — cannot loop
+  forever. On a red attempt the source file is reverted to `original_content`
+  (`fix_loop.py:258-259`), and again on the test-file-touched guardrail (`:267`);
+  no partial patch leaks. **DEFECT:** the `is_relative_to(MAIN_SRC)` path guard
+  (`fix_loop.py:235` and `:242`) is *lexical*, not resolved. `..` traversal
+  bypasses it — empirically, `engine/src/main/java/../../../../../agent/fix_loop.py`
+  returns `is_relative_to == True` yet resolves *outside* `MAIN_SRC`. An
+  LLM-controlled `file_path` (fed by attacker-influenceable test source / maven
+  output) could therefore write outside `engine/src/main/java` (e.g. overwrite the
+  workflow YAML or the agent itself). Not currently exploited (forced tool-use +
+  prompt says "use the exact path given"), but the guard does not do what it
+  claims. Fix: `fix_path.resolve().is_relative_to(MAIN_SRC.resolve())`.
+- **Independent local re-run — PASS (with a robustness note).** Ran
+  `/usr/bin/python3 agent/fix_loop.py` myself against clean red `main`. It
+  classified `OrderBook.java`, Opus 4.8 produced a **byte-identical** correct patch
+  (added `resting.reduceRemaining(tradeQty)`; made the pop conditional on
+  `resting.remainingQuantity() == 0`), tests went green (independently confirmed
+  `Tests run: 7, Failures: 0, BUILD SUCCESS`), and it committed touching **only**
+  `OrderBook.java` — not the test. The script's `git push` then failed on a
+  deterministic branch-name collision: branch is `fix/<method>-<HEAD-short-sha>`,
+  and since `main` never advances, every run yields the same name and collides with
+  the already-open fix PR on it. Restored `main` to clean red afterward.
+- **CI runs — PASS.** Runs `28959216066` (workflow_dispatch) and `28959400612`
+  (push) both show `test`=failure, `auto-fix`=success. PR #2
+  (github-actions[bot], open) carries the correct minimal diff, only
+  `OrderBook.java`, no test file. NOTE: an extra bot PR #3 (byte-identical to #2,
+  from the run-record push re-triggering the loop) exists and was *not* in the
+  self-report — benign, but it shows every push to `main` accumulates another
+  near-duplicate fix PR (the fix never merges to main by design).
+- **Repo permission escalation — PASS, minor over-grant.**
+  `default_workflow_permissions: write` + `can_approve_pull_request_reviews: true`,
+  scoped to this single demo repo (not org-wide) — appropriate. `contents: write` +
+  `pull-requests: write` are genuinely required (push branch + open PR).
+  `can_approve_pull_request_reviews` is not actually used by this workflow — slightly
+  broader than necessary, harmless here.
+- **Workflow YAML — PASS.** `auto-fix` has `needs: test` + `if: failure()` (runs
+  only on test failure). Triggers are `push:[main]` + `workflow_dispatch`, not
+  `pull_request`; a bot PR pushes a `fix/*` branch (filtered out) and does not push
+  `main`, so it does not re-trigger `auto-fix` — no infinite loop. A merged fix would
+  push `main`, re-run `test` green, and skip `auto-fix`. Reasoning confirmed correct.
+- **Verdict: PASS WITH NOTES — proceed to Day 3.** Core pipeline is genuinely
+  functional (independently reproduced byte-identical fix + green + correct PRs, test
+  never touched, real CI proof). Two real, non-blocking follow-ups: (1) harden the
+  lexical `is_relative_to` guard with `.resolve()`; (2) make the fix branch name
+  unique per run to avoid push collisions / duplicate-PR accumulation.
+
+**Both follow-ups fixed same day, post-checkpoint:**
+- `is_within_main_src()` (`agent/fix_loop.py`) now resolves both paths before the
+  containment check; re-tested against the exact exploit path the checkpoint agent
+  used (`engine/src/main/java/../../../../../agent/fix_loop.py`) — now correctly
+  rejected (previously passed the lexical check).
+- `open_pr()` branch name now includes a per-run `HH:MM:SS` suffix
+  (`fix/<method>-<short-sha>-<time>`), so re-runs against an unadvanced `main` no
+  longer collide on push.
+- Closed duplicate PR #3 (byte-identical to #2, caused by the collision above).
+  PR #2 (github-actions[bot]) remains as the canonical CI-triggered Day 2 artifact.
