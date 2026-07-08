@@ -95,9 +95,11 @@ Tasks:
       `mvn test` green there + replay gate blocks it against main
 - [x] `.github/workflows/replay-gate.yml`
 - [x] Local end-to-end verification (mirroring Day 1/2's real-run standard)
-- [ ] Push `main` + demo branch, open PR, wire required status check (needs
-      user confirmation — see "Open items" below)
-- [ ] Opus 4.8 checkpoint verification
+- [x] Push `main` + demo branch, open PR (see "Real-repo verification" below —
+      PR #5, real CI confirmed failing)
+- [ ] Wire required status check (deferred to user, manual GitHub UI step —
+      see "Open items" below)
+- [ ] Opus 4.8 checkpoint verification (running in background)
 
 ### Local verification evidence (2026-07-08, before Opus checkpoint)
 

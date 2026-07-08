@@ -115,11 +115,18 @@ python3 replay/diff_gate.py --baseline-ref main
   against an unadvanced `main`. Full verdict + fixes in `tasks/todo.md`. The Day 1
   seeded bug remains unmerged on `main` by design — fix loop output lives in PRs,
   not merged, so Day 3's replay-gate work starts from the same red baseline.
-- **Day 3 (replay gate) — implemented, pending Opus 4.8 checkpoint.**
+- **Day 3 (replay gate) — implemented and pushed, pending Opus 4.8 checkpoint.**
   `replay/ReplayHarness.java` (odds -> synthetic orders -> OrderBook ->
   SettlementEngine -> per-market P&L JSON), `replay/diff_gate.py`
   (git-worktree baseline vs. candidate working tree, blocks on any P&L delta,
   warns on >20% latency regression), `feed/resilience.py` (retry-with-backoff,
   typed gap/drift feed-health events) wired into both pollers, and
-  `.github/workflows/replay-gate.yml` (pull_request-triggered). Full detail,
-  design rationale, and the seeded-bug demo plan in `tasks/todo.md`.
+  `.github/workflows/replay-gate.yml` (pull_request-triggered). `main` is
+  pushed; the Day-3 seeded bug (truncating `PriceConverter`, disguised as a
+  perf commit) is live on PR #5
+  (https://github.com/sudhirerahul/airtight-loop/pull/5), where the real
+  GitHub Actions `replay-gate` check genuinely fails with the same P&L deltas
+  as the local run — confirmed, not just claimed. Marking the check a
+  *required* branch-protection status is left to the user (manual GitHub UI
+  step). Full detail, design rationale, and verification evidence in
+  `tasks/todo.md`.
