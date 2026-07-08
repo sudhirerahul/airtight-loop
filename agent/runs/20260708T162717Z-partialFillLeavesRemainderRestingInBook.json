@@ -1,0 +1,15 @@
+{
+  "test_class": "OrderBookTest",
+  "test_method": "partialFillLeavesRemainderRestingInBook",
+  "verdict": "fixed",
+  "attempts": [
+    {
+      "attempt": 1,
+      "source_file": "engine/src/main/java/com/novig/engine/OrderBook.java",
+      "root_cause": "The resting order is unconditionally popped from the queue after a trade, discarding its remaining quantity on a partial fill instead of only removing it when fully filled.",
+      "result": "green"
+    }
+  ],
+  "pr_url": "https://github.com/sudhirerahul/airtight-loop/pull/1",
+  "wall_clock_seconds": 25.1
+}
