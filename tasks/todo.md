@@ -134,18 +134,26 @@ Tasks:
   harmless (it's a WARN, never a block), but worth calling out on camera so it
   doesn't read as a second, unexplained finding.
 
+### Real-repo verification (2026-07-08, after user confirmed pushing)
+
+- Pushed `main` (`385fcd4`) to `origin/main`.
+- Pushed `demo/day3-pnl-replay-bug` and opened a real PR:
+  **https://github.com/sudhirerahul/airtight-loop/pull/5**.
+- **Real GitHub Actions `replay-gate` check on PR #5 → `fail`**
+  (run `28971467461`, job `85967959296`). Log shows the *exact same* P&L
+  deltas as the local run (e.g. `betmgm-6-buy`: baseline -580 -> candidate 0),
+  confirming the CI-hosted result matches the local one byte-for-byte, not
+  just "should work." This is the real, required-check-eligible failure the
+  demo's "money shot" needs.
+
 ### Open items before Day 3 is fully closed
 
-1. **Push `main` (1 commit ahead of `origin/main`) and push
-   `demo/day3-pnl-replay-bug` + open its PR** — real, visible, hard-to-reverse
-   actions on the public `sudhirerahul/airtight-loop` repo. Held for explicit
-   user go-ahead before executing (unlike routine local commits).
-2. **Marking `replay-gate` a required status check** is a GitHub
+1. **Marking `replay-gate` a required status check** is a GitHub
    branch-protection setting (Settings -> Branches -> protect `main` ->
-   required status checks), not something committed in-repo. A manual UI step
-   for the user, or an explicit ask to run the equivalent `gh api` call —
-   not done automatically.
-3. **Still no live odds capture** (`ODDS_API_KEY` unset, carried over from Day
+   required status checks) — user chose to do this manually in the UI rather
+   than via `gh api`. Not done automatically. PR #5 stays open, unmerged, as
+   the demo artifact (mirrors how Day 2's fix-loop PR stays open by design).
+2. **Still no live odds capture** (`ODDS_API_KEY` unset, carried over from Day
    1). Get a free key and do a real live odds+scores capture window before
    the Day 4 demo video; swap it in for (or alongside) the fixture window.
 
