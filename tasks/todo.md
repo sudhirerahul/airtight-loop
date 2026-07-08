@@ -83,19 +83,71 @@ Design decisions (locked in before implementing):
 
 Tasks:
 
-- [ ] Root `pom.xml` reactor + `replay/pom.xml`
-- [ ] `PriceConverter.java` (correct, round-half-up) + `PriceConverterTest.java`
-- [ ] `replay/NdjsonReader.java` (flat-JSON-line parser)
-- [ ] `replay/ReplayHarness.java` (odds->orders, replay, settle, JSON output)
-- [ ] Fixture window: `replay/testdata/sample_window/odds.ndjson`
-- [ ] Replay module tests (NdjsonReader + ReplayHarness against fixture)
-- [ ] `replay/diff_gate.py` (git-worktree baseline vs candidate, thresholds)
-- [ ] `feed/resilience.py` (backoff, gap, drift) + wire into both pollers
-- [ ] Seed the Day-3 bug on a separate branch (buggy `PriceConverter`), prove
+- [x] Root `pom.xml` reactor + `replay/pom.xml`
+- [x] `PriceConverter.java` (correct, round-half-up) + `PriceConverterTest.java`
+- [x] `replay/NdjsonReader.java` (flat-JSON-line parser)
+- [x] `replay/ReplayHarness.java` (odds->orders, replay, settle, JSON output)
+- [x] Fixture window: `replay/testdata/sample_window/odds.ndjson`
+- [x] Replay module tests (NdjsonReader + ReplayHarness against fixture)
+- [x] `replay/diff_gate.py` (git-worktree baseline vs candidate, thresholds)
+- [x] `feed/resilience.py` (backoff, gap, drift) + wire into both pollers
+- [x] Seed the Day-3 bug on a separate branch (buggy `PriceConverter`), prove
       `mvn test` green there + replay gate blocks it against main
-- [ ] `.github/workflows/replay-gate.yml`
-- [ ] Local end-to-end verification (mirroring Day 1/2's real-run standard)
+- [x] `.github/workflows/replay-gate.yml`
+- [x] Local end-to-end verification (mirroring Day 1/2's real-run standard)
+- [ ] Push `main` + demo branch, open PR, wire required status check (needs
+      user confirmation — see "Open items" below)
 - [ ] Opus 4.8 checkpoint verification
+
+### Local verification evidence (2026-07-08, before Opus checkpoint)
+
+- `mvn -pl replay -am test -Dtest='!OrderBookTest#partialFillLeavesRemainderRestingInBook'`
+  (excludes only the known, permanent Day-1 bug's test method — a CLI test
+  filter, not a code change) → engine: `Tests run: 9, Failures: 0` (incl. new
+  `PriceConverterTest`); replay: `Tests run: 8, Failures: 0`
+  (`NdjsonReaderTest` + `ReplayHarnessTest`, the latter including a real-fixture
+  smoke test asserting fills > 0 and zero-sum settlement).
+- `python3 -m unittest test_resilience` (feed/) → 8/8 pass. `python3 -m
+  unittest test_diff_gate` (replay/) → 5/5 pass.
+- Live-ran `scores_poller.py` against real ESPN once more with the resilience
+  wiring in place — real row appended, no regressions, no spurious health
+  events on a healthy poll.
+- `ReplayHarness` CLI dry run against the fixture:
+  `{"markets":{"401859967":{"pnl_by_order":{...10 orders...},"fill_count":5}},"wall_clock_millis":138}`
+  — 5 real fills from divergent bookmaker lines, zero-sum P&L.
+- **`diff_gate.py --baseline-ref main` on clean `main` → PASS** (identical
+  code both sides, only a latency WARN — see caveat below).
+- **Seeded the bug on `demo/day3-pnl-replay-bug`** (one line: `PriceConverter`
+  swaps `Math.round(...)` for a truncating `(long) (...)` cast, framed as an
+  innocuous perf micro-optimization commit). Confirmed `mvn -f engine/pom.xml
+  test` on that branch: `Tests run: 10, Failures: 1` — **same single
+  pre-existing Day-1 failure, nothing new fails**, `PriceConverterTest` still
+  green (its fixtures are exact fractions where truncation==rounding).
+  **`diff_gate.py --baseline-ref main` on that branch → BLOCKED**, real
+  nonzero P&L deltas on 5 of 10 orders in market `401859967` (e.g.
+  `betmgm-6-buy`: baseline -580 -> candidate 0, delta 580) — genuine
+  tests-green-replay-catches-it divergence, not a fabricated result.
+- **Caveat for the demo recording**: `diff_gate`'s latency WARN threshold
+  (20%) is noisy at this workload's scale (single-digit-ms JVM runs vary
+  20-70% run to run from JIT/OS scheduling noise, not real regressions) — seen
+  on both the clean-main smoke test and the bug-branch test. Expected and
+  harmless (it's a WARN, never a block), but worth calling out on camera so it
+  doesn't read as a second, unexplained finding.
+
+### Open items before Day 3 is fully closed
+
+1. **Push `main` (1 commit ahead of `origin/main`) and push
+   `demo/day3-pnl-replay-bug` + open its PR** — real, visible, hard-to-reverse
+   actions on the public `sudhirerahul/airtight-loop` repo. Held for explicit
+   user go-ahead before executing (unlike routine local commits).
+2. **Marking `replay-gate` a required status check** is a GitHub
+   branch-protection setting (Settings -> Branches -> protect `main` ->
+   required status checks), not something committed in-repo. A manual UI step
+   for the user, or an explicit ask to run the equivalent `gh api` call —
+   not done automatically.
+3. **Still no live odds capture** (`ODDS_API_KEY` unset, carried over from Day
+   1). Get a free key and do a real live odds+scores capture window before
+   the Day 4 demo video; swap it in for (or alongside) the fixture window.
 
 ## Day 4 — telemetry + skills + demo (not started)
 
