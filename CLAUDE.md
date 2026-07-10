@@ -136,12 +136,20 @@ python3 replay/diff_gate.py --baseline-ref main
   *required* branch-protection status is left to the user (manual GitHub UI
   step). Full detail, design rationale, and verification evidence in
   `tasks/todo.md`.
-- **Day 4 (telemetry + skills + demo) — build complete, pending Opus 4.8
-  checkpoint.** Added real token-usage capture to `agent/fix_loop.py` and
-  real run-record persistence to `replay/diff_gate.py` (both additive, no
-  behavior change), `telemetry/recorder.py` + `telemetry/dashboard.html`
-  (single-file flight recorder, no server, real Anthropic pricing for
-  cost-per-fix), `skills/scaffold-new-market` (verified against a real NHL
-  scaffold + `feed/schema.py`'s dataclasses), and `docs/teardown.md`. The
-  demo video itself is a manual follow-up — recording isn't something this
-  session can do. Full verification evidence in `tasks/todo.md`.
+- **Day 4 (telemetry + skills + demo) — DONE. Opus 4.8 checkpoint: PASS WITH
+  NOTES.** Added real token-usage capture to `agent/fix_loop.py` and real
+  run-record persistence to `replay/diff_gate.py` (both additive, no
+  behavior change — confirmed via `git diff` against `HEAD`), `telemetry/
+  recorder.py` + `telemetry/dashboard.html` (single-file flight recorder,
+  no server, real Anthropic pricing for cost-per-fix), `skills/
+  scaffold-new-market` (verified against a real NHL scaffold +
+  `feed/schema.py`'s dataclasses), and `docs/teardown.md`. Pushed to `main`
+  as commit `3cd2a02`. One real defect the checkpoint found was fixed same
+  session: a replay run record (`replay/runs/20260710T200616Z.json`) was
+  claimed force-added but never actually was — `git add -f`'d before commit.
+  Separately, a real Day-3 checkpoint verdict written by an earlier session
+  had never been committed (stranded in an abandoned working copy) — it was
+  recovered and is now in `tasks/todo.md`; see `tasks/lessons.md`'s
+  2026-07-10 entry. The demo video itself remains a manual follow-up —
+  recording isn't something this session can do. Full verification evidence
+  in `tasks/todo.md`.
