@@ -5,6 +5,9 @@ feed/captured/*.ndjson
 # force-added (git add -f) to keep provenance of a real end-to-end run
 agent/runs/*.json
 
+# diff_gate run records — same convention as agent/runs/*.json above
+replay/runs/*.json
+
 # Secrets — never commit an API key
 .env
 *.env

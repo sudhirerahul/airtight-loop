@@ -105,7 +105,11 @@ def is_within_main_src(path: Path) -> bool:
         return False
 
 
-def classify_failure(client: anthropic.Anthropic, class_name: str, method_name: str, failure_output: str) -> str:
+def _usage_dict(resp: anthropic.types.Message) -> dict:
+    return {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens}
+
+
+def classify_failure(client: anthropic.Anthropic, class_name: str, method_name: str, failure_output: str) -> tuple[str, dict]:
     candidates = list_main_source_files()
     prompt = (
         f"Failing test: {class_name}.{method_name}\n\n"
@@ -120,9 +124,10 @@ def classify_failure(client: anthropic.Anthropic, class_name: str, method_name: 
         tool_choice={"type": "tool", "name": "classify_failure"},
         messages=[{"role": "user", "content": prompt}],
     )
+    usage = _usage_dict(resp)
     for block in resp.content:
         if block.type == "tool_use":
-            return block.input["source_file"]
+            return block.input["source_file"], usage
     raise FixLoopError("Haiku did not return a tool_use block")
 
 
@@ -152,9 +157,12 @@ def generate_fix(
         tool_choice={"type": "tool", "name": "apply_fix"},
         messages=[{"role": "user", "content": "\n\n".join(prompt_parts)}],
     )
+    usage = _usage_dict(resp)
     for block in resp.content:
         if block.type == "tool_use":
-            return block.input
+            result = dict(block.input)
+            result["usage"] = usage
+            return result
     raise FixLoopError("Opus did not return a tool_use block")
 
 
@@ -234,11 +242,17 @@ def main() -> int:
 
     attempts_log: list[dict] = []
     previous_attempt: dict | None = None
+    token_totals = {"haiku_input_tokens": 0, "haiku_output_tokens": 0, "opus_input_tokens": 0, "opus_output_tokens": 0}
+
+    def _accumulate(prefix: str, usage: dict) -> None:
+        token_totals[f"{prefix}_input_tokens"] += usage["input_tokens"]
+        token_totals[f"{prefix}_output_tokens"] += usage["output_tokens"]
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
         print(f"[fix_loop] attempt {attempt}/{MAX_ATTEMPTS} for {class_name}.{method_name}")
 
-        source_file = classify_failure(client, class_name, method_name, output)
+        source_file, haiku_usage = classify_failure(client, class_name, method_name, output)
+        _accumulate("haiku", haiku_usage)
         source_path = REPO_ROOT / source_file
         if not is_within_main_src(source_path):
             print(f"[fix_loop] refusing: classified file outside engine/src/main/java: {source_file}", file=sys.stderr)
@@ -246,6 +260,7 @@ def main() -> int:
             continue
 
         fix = generate_fix(client, test_file, source_file, output, previous_attempt)
+        _accumulate("opus", fix["usage"])
         fix_path = REPO_ROOT / fix["file_path"]
         if not is_within_main_src(fix_path):
             print(f"[fix_loop] refusing: fix path outside engine/src/main/java: {fix['file_path']}", file=sys.stderr)
@@ -285,6 +300,7 @@ def main() -> int:
             "attempts": attempts_log,
             "pr_url": pr_url,
             "wall_clock_seconds": round(time.time() - start, 1),
+            "token_usage": token_totals,
         })
         return 0
 
@@ -295,6 +311,7 @@ def main() -> int:
         "verdict": "unresolved",
         "attempts": attempts_log,
         "wall_clock_seconds": round(time.time() - start, 1),
+        "token_usage": token_totals,
     })
     return 1
 

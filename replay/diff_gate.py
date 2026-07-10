@@ -26,11 +26,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_ODDS = REPO_ROOT / "replay" / "testdata" / "sample_window" / "odds.ndjson"
 FIXTURE_SCORES = REPO_ROOT / "replay" / "testdata" / "sample_window" / "scores.ndjson"
+RUNS_DIR = Path(__file__).parent / "runs"
 LATENCY_WARN_THRESHOLD = 0.20
 
 
@@ -121,6 +123,14 @@ def diff_summaries(baseline: dict, candidate: dict) -> tuple[list[str], list[str
     return block_reasons, warn_reasons
 
 
+def save_run_record(record: dict) -> None:
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = RUNS_DIR / f"{ts}.json"
+    path.write_text(json.dumps(record, indent=2, default=str))
+    print(f"[diff_gate] run record written to {path.relative_to(REPO_ROOT)}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-ref", default="origin/main")
@@ -148,6 +158,17 @@ def main() -> int:
 
     for reason in warn_reasons:
         print(f"[diff_gate] WARN: {reason}", file=sys.stderr)
+
+    verdict = "blocked" if block_reasons else "pass"
+    save_run_record({
+        "baseline_ref": args.baseline_ref,
+        "verdict": verdict,
+        "block_reasons": block_reasons,
+        "warn_reasons": warn_reasons,
+        "candidate_wall_clock_millis": candidate_summary.get("wall_clock_millis"),
+        "baseline_wall_clock_millis": baseline_summary.get("wall_clock_millis"),
+        "market_count": len(set(baseline_summary.get("markets", {})) | set(candidate_summary.get("markets", {}))),
+    })
 
     if block_reasons:
         print("[diff_gate] BLOCKED: candidate diverges from baseline settlement P&L", file=sys.stderr)

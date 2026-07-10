@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>airtight-loop — flight recorder</title>
+<style>
+  :root {
+    --surface-1: #fcfcfb;
+    --page-plane: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --gridline: #e1e0d9;
+    --border-ring: rgba(11, 11, 11, 0.10);
+    --status-good: #0ca30c;
+    --status-critical: #d03b3b;
+    --status-neutral: #898781;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1: #1a1a19;
+      --page-plane: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --gridline: #2c2c2a;
+      --border-ring: rgba(255, 255, 255, 0.10);
+      --status-good: #0ca30c;
+      --status-critical: #d03b3b;
+      --status-neutral: #898781;
+    }
+  }
+  :root[data-theme="light"] {
+    --surface-1: #fcfcfb; --page-plane: #f9f9f7; --text-primary: #0b0b0b;
+    --text-secondary: #52514e; --gridline: #e1e0d9; --border-ring: rgba(11, 11, 11, 0.10);
+  }
+  :root[data-theme="dark"] {
+    --surface-1: #1a1a19; --page-plane: #0d0d0d; --text-primary: #ffffff;
+    --text-secondary: #c3c2b7; --gridline: #2c2c2a; --border-ring: rgba(255, 255, 255, 0.10);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem;
+    max-width: 960px;
+    margin-inline: auto;
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.25rem; }
+  .subtitle { color: var(--text-secondary); font-size: 0.85rem; margin: 0 0 1.75rem; }
+  .subtitle code { font-family: ui-monospace, monospace; }
+
+  section { margin-bottom: 2.25rem; }
+  h2 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin: 0 0 0.75rem;
+  }
+
+  .stat-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--gridline);
+    border: 1px solid var(--gridline);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .stat-tile {
+    background: var(--surface-1);
+    padding: 1rem 1.1rem;
+  }
+  .stat-tile .label { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.35rem; }
+  .stat-tile .value { font-size: 1.7rem; font-weight: 600; line-height: 1.1; }
+  .stat-tile .caveat { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.3rem; }
+
+  .timeline { display: flex; flex-direction: column; gap: 0.5rem; }
+  .run {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    background: var(--surface-1);
+    border: 1px solid var(--border-ring);
+    border-left: 4px solid var(--status-neutral);
+    border-radius: 8px;
+    padding: 0.7rem 0.9rem;
+  }
+  .run[data-blocked="true"] { border-left-color: var(--status-critical); }
+  .run[data-blocked="false"] { border-left-color: var(--status-good); }
+  .run .icon { font-size: 1rem; width: 1.2rem; text-align: center; flex-shrink: 0; }
+  .run[data-blocked="true"] .icon { color: var(--status-critical); }
+  .run[data-blocked="false"] .icon { color: var(--status-good); }
+  .run .badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 0.15rem 0.4rem;
+    border: 1px solid var(--gridline);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+  .run .body { flex: 1; min-width: 0; }
+  .run .label { font-weight: 600; font-size: 0.88rem; }
+  .run .detail { color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.1rem; }
+  .run .meta { text-align: right; flex-shrink: 0; font-size: 0.78rem; color: var(--text-secondary); }
+  .run .timestamp { font-size: 0.7rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--gridline); }
+  th { color: var(--text-muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .empty { color: var(--text-muted); font-size: 0.85rem; padding: 1rem; text-align: center; border: 1px dashed var(--gridline); border-radius: 8px; }
+</style>
+</head>
+<body>
+  <h1>airtight-loop — flight recorder</h1>
+  <p class="subtitle">Generated <span id="generated-at">—</span> · regenerate with <code>python3 telemetry/recorder.py</code></p>
+
+  <section>
+    <h2>Overview</h2>
+    <div class="stat-tiles" id="stat-tiles"></div>
+  </section>
+
+  <section>
+    <h2>Run timeline</h2>
+    <div class="timeline" id="timeline"></div>
+  </section>
+
+  <section>
+    <h2>Feed health</h2>
+    <table id="feed-health">
+      <thead>
+        <tr><th>Feed</th><th class="num">Ingested</th><th class="num">Quarantined</th><th class="num">Gaps</th><th class="num">Drift events</th><th class="num">Uptime</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <script id="telemetry-data" type="application/json">
+{
+  "generated_at": "2026-07-10T20:09:46.866761+00:00",
+  "summary": {
+    "total_fix_runs": 1,
+    "fixed": 1,
+    "unresolved": 0,
+    "success_rate": 1.0,
+    "avg_wall_clock_seconds": 25.1,
+    "total_cost_usd": null,
+    "avg_cost_per_fix_usd": null,
+    "runs_missing_cost_data": 1,
+    "total_replay_runs": 1,
+    "replay_pass": 0,
+    "replay_blocked": 1,
+    "replay_pass_rate": 0.0,
+    "human_overrides_detected": 0,
+    "human_overrides_unknown": 0
+  },
+  "feed_health": {
+    "odds": {
+      "ingested": 0,
+      "quarantined": 0,
+      "gaps": 0,
+      "drift_events": 0,
+      "uptime": null
+    },
+    "scores": {
+      "ingested": 3,
+      "quarantined": 0,
+      "gaps": 0,
+      "drift_events": 0,
+      "uptime": 1.0
+    }
+  },
+  "fix_runs": [
+    {
+      "test_class": "OrderBookTest",
+      "test_method": "partialFillLeavesRemainderRestingInBook",
+      "verdict": "fixed",
+      "attempts": [
+        {
+          "attempt": 1,
+          "source_file": "engine/src/main/java/com/novig/engine/OrderBook.java",
+          "root_cause": "The resting order is unconditionally popped from the queue after a trade, discarding its remaining quantity on a partial fill instead of only removing it when fully filled.",
+          "result": "green"
+        }
+      ],
+      "pr_url": "https://github.com/sudhirerahul/airtight-loop/pull/1",
+      "wall_clock_seconds": 25.1,
+      "timestamp": "2026-07-08T16:27:17+00:00",
+      "cost_usd": null,
+      "human_override": false
+    }
+  ],
+  "replay_runs": [
+    {
+      "baseline_ref": "main",
+      "verdict": "blocked",
+      "block_reasons": [
+        "market 401859967 order betmgm-3-buy: baseline P&L -600 -> candidate P&L -590 (delta 10)",
+        "market 401859967 order betmgm-6-buy: baseline P&L -580 -> candidate P&L 0 (delta 580)",
+        "market 401859967 order betmgm-9-sell: baseline P&L 580 -> candidate P&L 590 (delta 10)",
+        "market 401859967 order draftkings-1-sell: baseline P&L 610 -> candidate P&L 0 (delta -610)",
+        "market 401859967 order draftkings-4-buy: baseline P&L -610 -> candidate P&L -600 (delta 10)"
+      ],
+      "warn_reasons": [
+        "latency regression 83%: baseline 18ms -> candidate 33ms"
+      ],
+      "candidate_wall_clock_millis": 33,
+      "baseline_wall_clock_millis": 18,
+      "market_count": 1,
+      "timestamp": "2026-07-10T20:06:16+00:00"
+    }
+  ],
+  "timeline": [
+    {
+      "type": "replay",
+      "timestamp": "2026-07-10T20:06:16+00:00",
+      "verdict": "blocked",
+      "blocked": true,
+      "label": "baseline main",
+      "detail": "5 order(s) diverged from baseline P&L",
+      "candidate_wall_clock_millis": 33
+    },
+    {
+      "type": "fix",
+      "timestamp": "2026-07-08T16:27:17+00:00",
+      "verdict": "fixed",
+      "blocked": false,
+      "label": "OrderBookTest.partialFillLeavesRemainderRestingInBook",
+      "detail": "https://github.com/sudhirerahul/airtight-loop/pull/1",
+      "cost_usd": null,
+      "wall_clock_seconds": 25.1
+    }
+  ]
+}
+</script>
+
+  <script>
+    const data = JSON.parse(document.getElementById('telemetry-data').textContent);
+    const s = data.summary || {};
+
+    function pct(x) { return x === null || x === undefined ? "—" : `${Math.round(x * 100)}%`; }
+    function usd(x) { return x === null || x === undefined ? "—" : `$${x.toFixed(2)}`; }
+    function secs(x) { return x === null || x === undefined ? "—" : `${x.toFixed(1)}s`; }
+    function fmtTime(iso) {
+      if (!iso) return "—";
+      const d = new Date(iso);
+      return d.toISOString().replace('T', ' ').slice(0, 19) + 'Z';
+    }
+
+    document.getElementById('generated-at').textContent = fmtTime(data.generated_at);
+
+    const tiles = [
+      { label: "Fix success rate", value: pct(s.success_rate), caveat: `${s.fixed ?? 0} fixed / ${s.total_fix_runs ?? 0} runs` },
+      { label: "Cost per fix", value: usd(s.avg_cost_per_fix_usd), caveat: s.runs_missing_cost_data ? `${s.runs_missing_cost_data} run(s) missing cost data` : "" },
+      { label: "Time to green", value: secs(s.avg_wall_clock_seconds), caveat: "avg wall-clock, fix-loop runs" },
+      { label: "Replay-gate pass rate", value: pct(s.replay_pass_rate), caveat: `${s.replay_blocked ?? 0} blocked / ${s.total_replay_runs ?? 0} runs` },
+      { label: "Human overrides", value: String(s.human_overrides_detected ?? 0), caveat: s.human_overrides_unknown ? `${s.human_overrides_unknown} unknown (gh unavailable)` : "merged despite a failing gate" },
+    ];
+    document.getElementById('stat-tiles').innerHTML = tiles.map(t => `
+      <div class="stat-tile">
+        <div class="label">${t.label}</div>
+        <div class="value">${t.value}</div>
+        ${t.caveat ? `<div class="caveat">${t.caveat}</div>` : ""}
+      </div>
+    `).join("");
+
+    const timelineEl = document.getElementById('timeline');
+    if (!data.timeline || data.timeline.length === 0) {
+      timelineEl.innerHTML = `<div class="empty">No runs recorded yet. Run <code>agent/fix_loop.py</code> or <code>replay/diff_gate.py</code>, then <code>telemetry/recorder.py</code>.</div>`;
+    } else {
+      timelineEl.innerHTML = data.timeline.map(run => {
+        const icon = run.blocked ? "&#10007;" : "&#10003;";
+        const metric = run.type === "fix"
+          ? [usd(run.cost_usd), secs(run.wall_clock_seconds)].filter(v => v !== "—").join(" · ")
+          : (run.candidate_wall_clock_millis != null ? `${run.candidate_wall_clock_millis}ms` : "—");
+        return `
+          <div class="run" data-blocked="${run.blocked}">
+            <span class="icon" aria-hidden="true">${icon}</span>
+            <span class="badge">${run.type === "fix" ? "fix-loop" : "replay-gate"}</span>
+            <div class="body">
+              <div class="label">${run.label ?? ""}</div>
+              <div class="detail">${run.detail ?? ""}</div>
+            </div>
+            <div class="meta">
+              <div>${metric || "—"}</div>
+              <div class="timestamp">${fmtTime(run.timestamp)}</div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    const feedBody = document.querySelector('#feed-health tbody');
+    const feeds = Object.entries(data.feed_health || {});
+    if (feeds.length === 0) {
+      feedBody.innerHTML = `<tr><td colspan="6" class="empty">No feed data captured yet.</td></tr>`;
+    } else {
+      feedBody.innerHTML = feeds.map(([name, h]) => `
+        <tr>
+          <td>${name}</td>
+          <td class="num">${h.ingested}</td>
+          <td class="num">${h.quarantined}</td>
+          <td class="num">${h.gaps}</td>
+          <td class="num">${h.drift_events}</td>
+          <td class="num">${pct(h.uptime)}</td>
+        </tr>
+      `).join("");
+    }
+  </script>
+</body>
+</html>

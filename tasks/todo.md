@@ -99,7 +99,9 @@ Tasks:
       PR #5, real CI confirmed failing)
 - [ ] Wire required status check (deferred to user, manual GitHub UI step —
       see "Open items" below)
-- [ ] Opus 4.8 checkpoint verification (running in background)
+- [x] **Opus 4.8 checkpoint verification — PASS** (recovered from an
+      earlier session's uncommitted work — see the Day 3 verdict below and
+      `tasks/lessons.md`'s 2026-07-10 entry)
 
 ### Local verification evidence (2026-07-08, before Opus checkpoint)
 
@@ -159,12 +161,86 @@ Tasks:
    1). Get a free key and do a real live odds+scores capture window before
    the Day 4 demo video; swap it in for (or alongside) the fixture window.
 
-## Day 4 — telemetry + skills + demo (not started)
+## Day 4 — telemetry + skills + demo
 
-- [ ] `telemetry/recorder.py` + `dashboard.html`
-- [ ] One skill (`skills/scaffold-new-market`)
-- [ ] `docs/teardown.md` (incl. automation-opportunities map)
-- [ ] Record demo video
+Design decisions:
+
+- **Two upstream additive changes, no behavior change.** `agent/fix_loop.py`
+  now captures real `resp.usage.input_tokens`/`output_tokens` from both the
+  Haiku classify call and each Opus fix-generation call, threaded into a
+  `token_usage` summary on the saved run record. `replay/diff_gate.py` now
+  writes a `replay/runs/<ts>.json` record (verdict, block/warn reasons,
+  both builds' wall-clock, market count) — it never persisted anything
+  before Day 4. Neither change touches the fix loop's guardrails or the
+  gate's block/pass logic.
+- **Real pricing, not estimated.** `telemetry/recorder.py`'s cost-per-fix
+  math uses Anthropic's published per-1M-token pricing for Haiku 4.5
+  ($1/$5) and Opus 4.8 ($5/$25), verified via the `claude-api` skill at
+  build time, not guessed. Runs predating the `token_usage` field (the Day 2
+  sample) get `cost_usd: null`, never a fabricated number.
+- **Dashboard is a static file with embedded data, not a live app.**
+  `recorder.py` regex-replaces the JSON inside dashboard.html's
+  `#telemetry-data` script tag on every run — no server, no `fetch()`, works
+  opening the file directly. LLM-authored text (root causes) gets its
+  `</` sequences escaped before embedding so it can't break out of the
+  script tag.
+- **`human_override` is a real, best-effort check, not fabricated.** For
+  each fix-loop PR, `recorder.py` shells out to `gh pr view`/`gh pr checks`
+  to see if it was merged despite a failing `replay-gate` check; if `gh`
+  is unavailable or a PR can't be queried it's marked unknown (`null`),
+  never guessed. No override has occurred yet in this repo's real history
+  (both fix-loop PRs and the Day-3 demo PR remain open by design) — the
+  dashboard correctly shows 0, not a fabricated example.
+
+Tasks:
+
+- [x] `agent/fix_loop.py` — real per-attempt token usage, threaded into
+      `save_run_record`'s new `token_usage` field
+- [x] `replay/diff_gate.py` — `save_run_record()` writing
+      `replay/runs/<ts>.json`; `.gitignore` entry added
+- [x] Generated one real replay run record by re-running `diff_gate.py`
+      against `demo/day3-pnl-replay-bug` vs `main` (reproduces Day 3's
+      exact blocked P&L deltas) and force-added it (provenance sample,
+      same convention as Day 2's)
+- [x] `telemetry/recorder.py` (stdlib-only) + `telemetry/dashboard.html`
+      (single-file, `dataviz`-skill-validated palette, no server)
+- [x] `skills/scaffold-new-market/` — verified against a real NHL scaffold,
+      checked field-for-field against `feed/schema.py`'s dataclasses
+- [x] `docs/teardown.md` (boundary statement + automation-opportunities map
+      + honest JD-coverage note)
+- [x] **Opus 4.8 checkpoint verification — PASS WITH NOTES** (see Checkpoint
+      verdicts below; one real gap found and fixed same session)
+- [ ] Record demo video — **manual follow-up, not something this session
+      can do** (no camera/screen-recorder access). Script is in the full
+      plan doc's "Demo script" section.
+
+### Local verification evidence (2026-07-10)
+
+- `python3 -m py_compile agent/fix_loop.py replay/diff_gate.py` — clean.
+- Re-ran `diff_gate.py --baseline-ref main` from `demo/day3-pnl-replay-bug`:
+  same 5 P&L deltas as Day 3's original evidence, byte-for-byte
+  (`betmgm-6-buy` -580->0, `draftkings-1-sell` 610->0, three ±10 deltas) —
+  `replay/runs/20260710T200616Z.json` records it as `"verdict": "blocked"`.
+- `python3 telemetry/recorder.py` — real output: `1 fix runs, 1 replay runs,
+  dashboard updated`. The one fix run (Day 2's committed sample, predates
+  `token_usage`) correctly shows `cost_usd: null` and
+  `runs_missing_cost_data: 1` rather than a guessed cost; `human_override`
+  for it resolved to `false` via a live `gh pr view` call (PR #1 is open,
+  unmerged). The one replay run correctly shows `verdict: blocked`, its 5
+  real order-level deltas, and both builds' real wall-clock times.
+- `dashboard.html` structural check (Python `html.parser`, tag-balance) —
+  clean. Dark/light status palette (`#0ca30c`/`#d03b3b`) passed the
+  `dataviz` skill's six-checks validator in both modes (CVD ΔE 12.4,
+  contrast >=3:1 on both surfaces). Opened in the default browser via
+  `open` for visual confirmation — Playwright MCP was disconnected this
+  session so a screenshot couldn't be captured directly.
+- `skills/scaffold-new-market/scripts/scaffold_market.py nhl` — generated
+  `replay/testdata/nhl_window/`; both placeholder rows were constructed as
+  real `feed.schema.OddsTick`/`ScoreEvent` dataclass instances (not just
+  eyeballed against the field list) — 0 extra/missing fields either way.
+  Test fixture removed afterward (verification only, not a deliverable).
+- `engine/`: `mvn -q test` still `Tests run: 10, Failures: 1` — the one
+  pre-existing Day-1 failure, confirming nothing above touched engine code.
 
 ## Checkpoint verdicts
 
@@ -259,3 +335,182 @@ re-ran CI inspection, empirically tested the guardrail):
   longer collide on push.
 - Closed duplicate PR #3 (byte-identical to #2, caused by the collision above).
   PR #2 (github-actions[bot]) remains as the canonical CI-triggered Day 2 artifact.
+
+### Day 3 — PASS (2026-07-08)
+
+Independent Opus 4.8 review (did not implement or fix anything; rebuilt every
+module myself, re-ran all suites, ran both harness + gate by hand, reproduced the
+seeded bug end-to-end, and independently queried the live GitHub state):
+
+- **Toolchain — PASS.** `java -version` = OpenJDK 21.0.11 (Homebrew), `mvn` =
+  3.9.16 running on JDK 26 (language level pinned to 21 by the poms — as
+  documented). PATH prefix from `tasks/lessons.md` worked as noted.
+- **Reactor build — PASS.** `cd engine && mvn -q test` standalone → `Tests run: 10,
+  Failures: 1` (the 3 new `PriceConverterTest` + 4 `OrderBookTest` + 3
+  `SettlementEngineTest`; the single failure is the permanent Day-1 partial-fill
+  bug, untouched). `mvn -pl replay -am test -Dtest='!OrderBookTest#partialFill...'`
+  → engine 9/0, replay **8/0** (`NdjsonReaderTest` 4 + `ReplayHarnessTest` 4). The
+  replay module's own tests genuinely pass — independently re-run, not trusted.
+- **Code read line-by-line + hand-trace — PASS.** Hand-traced
+  `divergentBookmakerLines...` (-150 vs -400 → home ticks 60/80; B-2-buy@79 crosses
+  resting A-1-sell@61, fills 10 @ 61; OUTCOME_A_WINS → buyer B-2-buy +390, seller
+  A-1-sell -390) — matches the test's asserted values exactly. Odds→prob math
+  (`100/(odds+100)` / `-odds/(-odds+100)`, round-half-up) is correct; BUY/SELL side
+  assignment in `SettlementEngine.settle` is correct; home→OUTCOME_A / away→OUTCOME_B
+  mapping correct; `toJson` escaping + TreeMap ordering deterministic. Note:
+  `SYNTHETIC_QUANTITY=10` on both sides of every quote means every fill is a *full*
+  fill (tradeQty always 10), so the Day-1 `OrderBook` partial-fill bug never fires
+  during replay — the two seeded bugs are cleanly independent, as claimed.
+- **ReplayHarness CLI — PASS.** Ran against `testdata/sample_window/` myself:
+  `fill_count:5`, 10 orders, and I summed the `pnl_by_order` values by hand →
+  **exactly 0** (zero-sum verified, not asserted on faith). `betmgm-6-buy=-580`
+  matches the self-report.
+- **diff_gate.py security + correctness — PASS.** No `shell=True` anywhere; all
+  `git`/`mvn`/`java` calls are argv lists; `--baseline-ref` reaches `git worktree
+  add --detach <path> <ref>` as a discrete trailing argv element (no injection). The
+  worktree cleanup is in a `finally` (`:141-145`) and I confirmed empirically that
+  after a run `git worktree list` shows only `main` (no leaked temp worktree). The
+  "compile-only, no install" design genuinely avoids the shared-`~/.m2` GAV
+  collision it frets about: `~/.m2/repository/com/novig/engine/0.1.0/` contains
+  **only `*.lastUpdated` markers, no jar/pom** — engine is never installed, so the
+  reactor always builds fresh bytecode from each checkout's own `target/classes`.
+  Worst case for a hostile `--baseline-ref` is a build/worktree failure (exit 1),
+  not code execution.
+- **Seeded Day-3 bug — PASS (reproduced end-to-end).** `git diff main..demo` shows
+  exactly the claimed one-line change (`Math.round(...)` → `(long) (...)` cast) in a
+  commit disguised as "perf: avoid Math.round overhead in price conversion hot
+  path". On `demo/day3-pnl-replay-bug`: `mvn -f engine/pom.xml test` → `Tests run:
+  10, Failures: 1` (same single Day-1 failure, nothing new); `PriceConverterTest`
+  still 3/3 green (its fixtures are exact fractions where trunc==round). Then
+  `python3 replay/diff_gate.py --baseline-ref main` from that branch → **BLOCKED,
+  exit 1**, with real deltas (`betmgm-6-buy: -580 → 0`, `draftkings-1-sell: 610 →
+  0`, three ±10 deltas) — genuine tests-green / replay-catches-it divergence.
+  Returned to `main` afterward; tree clean.
+- **Real GitHub state — PASS.** `gh pr view 5` → real, **OPEN**, title "perf: avoid
+  Math.round overhead...", head `demo/day3-pnl-replay-bug`. `gh pr checks 5` →
+  `replay-gate` = **fail** (run `28971467461`, job `85967959296`); CodeRabbit
+  passed. `gh run view 28971467461 --log` shows the *identical* five P&L deltas as
+  my local run, byte-for-byte (baseline -580 → candidate 0 on betmgm-6-buy, etc.).
+  The CI failure is real and required-check-eligible.
+- **resilience.py + wiring — PASS.** `fetch_with_backoff` retries 429/`URLError`
+  with exponential backoff (`base*2^(n-1)`), fails non-429 HTTP immediately without
+  retry, records a `gap` on exhaustion; `detect_drift` records a `drift` event only
+  above threshold and is null-safe on `total==0`. Both pollers fully *replaced*
+  their old inline fetch try/except with a single `fetch_with_backoff(...)` call (no
+  duplicated blocks) and call `detect_drift(feed, quarantined, len(events))` with
+  sensible args. `python3 -m unittest test_resilience` → **8/8**; `test_diff_gate`
+  → **5/5** (both re-run by me).
+- **Fixtures + hygiene — PASS.** `testdata/sample_window/scores.ndjson` is a
+  byte-identical 2-row prefix of the real `feed/captured/scores.ndjson` (the live
+  file has one extra later poll row, same game 401859967 / winner=away — no
+  settlement impact). `odds.ndjson` matches `feed/schema.py`'s `OddsTick` shape
+  exactly and includes the non-round values (`+118`, `+105`, `-155`) that expose
+  the bug. `git ls-files` shows **no `target/`, no `.env`, no live `captured/*`**;
+  `.gitignore` covers all three. No secrets in any Day-3 commit.
+
+- **NOTE (robustness, not a defect):** `NdjsonReader` uses raw `charAt` indexing;
+  a truncated row (e.g. a key with no following `:`) throws
+  `StringIndexOutOfBoundsException` rather than the intended
+  `IllegalArgumentException`, and `ReplayHarness.readRows` (`ReplayHarness.java:170-179`)
+  only catches `IOException` — so a malformed *captured* row would crash the harness
+  with a stack trace instead of being quarantined the way the feed side quarantines
+  bad rows. Input is trusted internal capture data, so low risk, but it diverges
+  from the pipeline's "quarantine, don't crash" ethos. (`NdjsonReader.java:36,56`.)
+- **NOTE (minor local/CI inconsistency):** `diff_gate.default_scores_file()`
+  (`diff_gate.py:46-48`) prefers `feed/captured/scores.ndjson` when present, so a
+  *local* run replays against the real captured scores (3 rows) while *CI* (where
+  `captured/` is gitignored and absent) replays against the fixture (2 rows). Same
+  event and final outcome, so P&L is identical either way here — but "the same
+  captured window" is not literally byte-identical between local and CI. Harmless
+  given the identical outcome; worth knowing before swapping in a live odds capture.
+- **DESIGN CHOICE I'd flag (not a defect):** blocking on *any* nonzero per-order
+  P&L delta is deliberately strict — a legitimate refactor that shifts rounding by
+  one tick anywhere would block. Correct for this demo's "settlement must be
+  byte-identical" thesis; a production gate would want a tolerance/allowlist path.
+  Similarly, modeling only each bookmaker's *home*-team quote (away quotes are
+  filtered out and unused) is a documented, internally-consistent simplification,
+  not a bug. The 20% latency WARN being noisy at single-digit-ms scale is already
+  acknowledged in the evidence and is WARN-only.
+- **Verdict: PASS — proceed to Day 4.** Every claim in the Day-3 section was
+  independently reproduced: reactor + standalone builds, replay 8/8, hand-verified
+  zero-sum replay output, a security-clean gate whose worktree cleanup and
+  no-install GAV avoidance I confirmed empirically, and a seeded bug that is
+  invisible to unit tests yet blocks the gate both locally and on the real PR #5 CI
+  run with byte-identical deltas. No security or correctness defects in the Day-3
+  code; the three items above are robustness/design notes, none blocking.
+
+### Day 4 — PASS WITH NOTES (2026-07-10)
+
+Independent Opus 4.8 review (did not implement; re-read every new/changed file
+line by line, re-ran the toolchain, re-generated the dashboard, reproduced the
+scaffold with dataclass construction, and diffed the two upstream files against
+`HEAD`):
+
+- **Additive-only upstream changes — PASS.** `git diff HEAD -- agent/fix_loop.py
+  replay/diff_gate.py` confirmed both changes are strictly additive. In
+  `fix_loop.py`: the classify→guardrail→patch→retest→guardrail→PR flow is
+  untouched — `is_within_main_src` still resolves both paths (the Day-2
+  hardening is intact), `MAX_ATTEMPTS` loop bound unchanged, revert-on-red and
+  the test-file-touched guardrail unchanged. In `diff_gate.py`: the new
+  `save_run_record` call is inserted after `diff_summaries` and before the
+  unchanged `if block_reasons: return 1` — the block/warn decision logic (any
+  nonzero per-order P&L delta blocks; >20% latency warns only) is byte-for-byte
+  unchanged.
+- **Security review of new code — PASS.** `recorder.py`'s two `gh` calls use
+  argv lists, no `shell=True`, 15s timeouts; `pr_url` reaches `gh pr view` as a
+  discrete argv element (no shell-injection surface); broad `except` clauses
+  leave `human_override=None` on any failure, never a guess. `scaffold_market.py`
+  looks up the sport name in a fixed dict — `slug` (and therefore the output
+  path) can never be steered outside `replay/testdata/` by user input; an
+  unknown name just exits 1. `dashboard.html` has no `eval`/`new Function`; the
+  `innerHTML` sinks only inject derived numbers, `pr_url`, and a regex-constrained
+  `test_class.test_method` — the LLM-authored `root_cause` text is never rendered
+  into `innerHTML`. The `</` → `<\/` escape before embedding JSON into the
+  `<script>` tag is real and correctly implemented (verified by reading, not on
+  faith): a literal `</script>` inside a JSON string becomes the harmless 3-char
+  `<\/script>`, and `\/` is a valid JSON escape `JSON.parse` restores to `/`.
+- **Independent reproduction of local evidence — PASS.** `py_compile` clean on
+  all four new/changed Python files. `cd engine && mvn -q test` →
+  `Tests run: 10, Failures: 1` (the one pre-existing Day-1 failure, nothing new).
+  Re-ran `telemetry/recorder.py` — regenerated `dashboard.html` is byte-identical
+  to the committed one except `generated_at`, confirming the embedded JSON
+  faithfully mirrors on-disk `agent/runs/`, `replay/runs/`, `feed/captured/`. The
+  Day-2 fix sample (predates `token_usage`) correctly shows `cost_usd: null`;
+  `human_override: false` for it is a real live `gh` result (PR #1 open,
+  unmerged), not a guess. Independently verified the cost formula against
+  synthetic input (null→`None`; 1M-tokens-each→`$36.00` = 1+5+5+25; a realistic
+  case→`$0.0745`) — Haiku $1/$5 and Opus $5/$25 per 1M applied correctly. Ran
+  `scaffold_market.py nhl`, loaded the generated JSON, and constructed real
+  `OddsTick`/`ScoreEvent` dataclass instances from it — 0 missing/extra fields
+  (only `captured_at` beyond the schema, the standard capture-metadata field).
+  Test directory deleted afterward; confirmed clean. `replay/runs/
+  20260710T200616Z.json` content matches the original Day-3 evidence exactly
+  (market `401859967`, same 5 P&L deltas, `verdict: blocked`).
+- **`.gitignore` — PASS on pattern; real gap found and fixed same session.**
+  `replay/runs/*.json` is correctly ignored, mirroring `agent/runs/*.json` — but
+  the checkpoint caught that the claimed force-added provenance sample
+  (`replay/runs/20260710T200616Z.json`) was NOT actually tracked
+  (`git ls-files replay/runs/` was empty at review time), contradicting this
+  file's own "force-added it" claim. Fixed immediately after the checkpoint:
+  `git add -f replay/runs/20260710T200616Z.json`, now confirmed tracked.
+- **`docs/teardown.md` + `SKILL.md` — PASS.** Boundary statement honest (toy
+  engine, captured-not-streamed, no auth/money, "prototype not product").
+  Automation-opportunities map ties to real artifacts. JD-coverage note
+  correctly flags cross-functional collaboration as thin, doesn't overclaim it.
+  SKILL.md's field/env-var/verification claims match the script and
+  `feed/schema.py`.
+- **Demo video — not a defect.** Correctly disclosed as a manual follow-up (no
+  recording capability this session); not flagged as a gap.
+- **Verdict: PASS WITH NOTES — Day 4 accepted.** All code is genuinely additive
+  with no behavior change to the fix loop's guardrails or the gate's block/pass
+  logic; the new telemetry/skill/docs code is secure and correct; every piece of
+  local evidence reproduced independently. One real gap found (the provenance
+  sample wasn't actually force-added despite the claim) — fixed same session,
+  immediately after the checkpoint, before this verdict was recorded.
+
+**Separately, a real Day-3 checkpoint verdict recovered this session:** the
+`### Day 3 — PASS` section above was written by an earlier session but never
+committed — it existed only in the now-abandoned iCloud-path working copy (see
+`tasks/lessons.md`, 2026-07-10 entry). Recovered by diffing that copy's tracked
+files against `git HEAD` before it's discarded; no other uncommitted work was
+found in it beyond this one block.

@@ -95,6 +95,12 @@ python3 replay/diff_gate.py --baseline-ref main
   already in `feed/captured/scores.ndjson`, paired with hand-authored (not
   captured) odds ticks for that same game. See its `README.md`. Replace with a
   real live capture before the Day 4 demo video once a key is obtained.
+- **`agent/runs/*.json` and `replay/runs/*.json` are gitignored, regenerated-
+  on-every-run telemetry inputs** (one real sample of each is force-added for
+  provenance, same convention as Day 2's). `telemetry/recorder.py` reads both
+  plus `feed/captured/*` and rewrites the embedded data blob in
+  `telemetry/dashboard.html` — run it after any new fix-loop or replay-gate
+  run to refresh the dashboard.
 
 ## Status log
 
@@ -115,7 +121,7 @@ python3 replay/diff_gate.py --baseline-ref main
   against an unadvanced `main`. Full verdict + fixes in `tasks/todo.md`. The Day 1
   seeded bug remains unmerged on `main` by design — fix loop output lives in PRs,
   not merged, so Day 3's replay-gate work starts from the same red baseline.
-- **Day 3 (replay gate) — implemented and pushed, pending Opus 4.8 checkpoint.**
+- **Day 3 (replay gate) — DONE. Opus 4.8 checkpoint: PASS.**
   `replay/ReplayHarness.java` (odds -> synthetic orders -> OrderBook ->
   SettlementEngine -> per-market P&L JSON), `replay/diff_gate.py`
   (git-worktree baseline vs. candidate working tree, blocks on any P&L delta,
@@ -130,3 +136,12 @@ python3 replay/diff_gate.py --baseline-ref main
   *required* branch-protection status is left to the user (manual GitHub UI
   step). Full detail, design rationale, and verification evidence in
   `tasks/todo.md`.
+- **Day 4 (telemetry + skills + demo) — build complete, pending Opus 4.8
+  checkpoint.** Added real token-usage capture to `agent/fix_loop.py` and
+  real run-record persistence to `replay/diff_gate.py` (both additive, no
+  behavior change), `telemetry/recorder.py` + `telemetry/dashboard.html`
+  (single-file flight recorder, no server, real Anthropic pricing for
+  cost-per-fix), `skills/scaffold-new-market` (verified against a real NHL
+  scaffold + `feed/schema.py`'s dataclasses), and `docs/teardown.md`. The
+  demo video itself is a manual follow-up — recording isn't something this
+  session can do. Full verification evidence in `tasks/todo.md`.

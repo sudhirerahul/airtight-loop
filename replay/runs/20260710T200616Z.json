@@ -1,0 +1,17 @@
+{
+  "baseline_ref": "main",
+  "verdict": "blocked",
+  "block_reasons": [
+    "market 401859967 order betmgm-3-buy: baseline P&L -600 -> candidate P&L -590 (delta 10)",
+    "market 401859967 order betmgm-6-buy: baseline P&L -580 -> candidate P&L 0 (delta 580)",
+    "market 401859967 order betmgm-9-sell: baseline P&L 580 -> candidate P&L 590 (delta 10)",
+    "market 401859967 order draftkings-1-sell: baseline P&L 610 -> candidate P&L 0 (delta -610)",
+    "market 401859967 order draftkings-4-buy: baseline P&L -610 -> candidate P&L -600 (delta 10)"
+  ],
+  "warn_reasons": [
+    "latency regression 83%: baseline 18ms -> candidate 33ms"
+  ],
+  "candidate_wall_clock_millis": 33,
+  "baseline_wall_clock_millis": 18,
+  "market_count": 1
+}
