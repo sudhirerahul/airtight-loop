@@ -17,6 +17,6 @@ public final class PriceConverter {
             ? 100.0 / (americanOdds + 100.0)
             : (double) -americanOdds / (-americanOdds + 100.0);
 
-        return Math.round(impliedProbability * SettlementEngine.MAX_PRICE_TICKS);
+        return (long) (impliedProbability * SettlementEngine.MAX_PRICE_TICKS);
     }
 }
